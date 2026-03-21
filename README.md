@@ -4,7 +4,7 @@ Full-stack web application for real-time telemetry, data acquisition, and
 visualization of a variable-volume AUV prototype that controls buoyancy
 via volume variation using the Archimedes Principle.
 
-Built with **FastAPI** (backend) as part of a doctoral research experiment
+Built with **FastAPI** + **React** as part of a doctoral research experiment
 at Cetys Universidad.
 
 ---
@@ -44,7 +44,6 @@ layer for experiment analysis.
 The prototype controls buoyancy by varying its internal volume, altering
 the displaced fluid mass and therefore the net buoyant force:
 ```
-
 F_b = ρ · g · V
 ```
 
@@ -65,18 +64,37 @@ characterize ascent/descent dynamics.
 | Layer | Technology |
 |-------|------------|
 | Backend | FastAPI (Python 3.11+) |
-| Frontend | TBD |
-| Real-time data | WebSocket / HTTP polling from ESP32 |
-| Data storage | TBD (SQLite for experiments, CSV export) |
+| Frontend | React 18 + Vite |
+| Charts | Recharts |
+| Styling | Tailwind CSS |
+| Real-time data | WebSocket from ESP32 |
+| Data storage | SQLite + CSV export |
+
+---
+
+## Data Flow
+
+```
+ESP32 (MPU6050 + BMP280 + stepper)
+    │  Wi-Fi (HTTP POST / WebSocket)
+    ▼
+FastAPI backend  ──→  SQLite (sessions)
+    │
+    │  REST API + WebSocket
+    ▼
+React frontend (Recharts dashboard)
+    │
+    ▼
+CSV / JSON export
+```
 
 ---
 
 ## Project Structure
 ```
-
 proto-auv/
 ├── backend/
-│   ├── main.py              # FastAPI app entry point
+│   ├── main.py              # FastAPI app entry point, CORS config
 │   ├── routers/
 │   │   ├── telemetry.py     # Sensor data ingestion endpoints
 │   │   ├── sessions.py      # Experiment session management
@@ -86,7 +104,15 @@ proto-auv/
 │   │   └── session.py       # Experiment session schema
 │   └── services/
 │       └── buoyancy.py      # Archimedes calculations, derived metrics
-├── frontend/                # TBD
+├── frontend/
+│   └── src/
+│       ├── App.jsx              # Root component, WebSocket setup
+│       ├── components/
+│       │   ├── TelemetryChart.jsx   # Recharts time-series plots
+│       │   ├── SessionControls.jsx  # Start/stop session, labeling
+│       │   └── ExportButton.jsx     # CSV / JSON download trigger
+│       └── hooks/
+│           └── useTelemetry.js      # WebSocket state management
 ├── data/
 │   ├── sessions/            # Stored experiment runs
 │   └── sample/              # Sample datasets for development
@@ -99,19 +125,19 @@ proto-auv/
 
 ---
 
-## Planned Features
+## Features
 
-- **Real-time telemetry dashboard** — live plots of pressure, acceleration
+- [ ] Real-time telemetry dashboard — live plots of pressure, acceleration
   (Z-axis), estimated depth/altitude, and motor position
-- **Experiment session management** — start/stop recording, label runs,
+- [ ] Experiment session management — start/stop recording, label runs,
   annotate events (e.g., direction change, target depth reached)
-- **Buoyancy force visualization** — computed F_b over time based on
+- [ ] Buoyancy force visualization — computed F_b over time based on
   BMP280 pressure readings and known fluid density
-- **Vertical motion trajectory** — depth vs. time plots for comparison
+- [ ] Vertical motion trajectory — depth vs. time plots for comparison
   against the dynamic model produced by other team members
-- **Data export** — CSV and JSON export per session for external analysis
+- [ ] Data export — CSV and JSON export per session for external analysis
   (MATLAB, Python, Excel)
-- **REST API** — clean endpoints for integration with the ESP32 data
+- [ ] REST API — clean endpoints for integration with the ESP32 data
   stream and potential future hardware iterations
 
 ---
@@ -157,7 +183,6 @@ proto-auv/
 
 ## API Endpoints (Planned)
 ```
-
 GET  /telemetry/latest      → most recent sensor snapshot
 POST /telemetry/ingest      → receive data from ESP32
 GET  /sessions              → list all experiment sessions
@@ -169,6 +194,8 @@ GET  /sessions/{id}/export  → download session data as CSV
 ---
 
 ## Getting Started
+
+### Backend
 ```bash
 git clone https://github.com/your-username/proto-auv.git
 cd proto-auv
@@ -179,6 +206,18 @@ uvicorn backend.main:app --reload
 ```
 
 API docs available at `http://localhost:8000/docs` (Swagger UI).
+
+### Frontend
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Dashboard available at `http://localhost:5173`.
+
+> The backend must be running for the frontend to receive telemetry data.
+> FastAPI is configured to allow CORS requests from `localhost:5173`.
 
 ---
 
