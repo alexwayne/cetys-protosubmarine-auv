@@ -1,3 +1,6 @@
+# Claude Code — AI assistant memory (personal, not for version control)
+.claude/
+
 # Runtime data — database and session files
 data/auv.db
 data/sessions/
