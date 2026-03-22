@@ -25,7 +25,8 @@ The physical prototype controls buoyancy via volume variation (`F_b = ρ · g ·
 - **React 18** via **Vite**
 - **Recharts** for time-series data visualization
 - **Tailwind CSS** for styling
-- Native browser `WebSocket` API for real-time telemetry
+- HTTP polling (`setInterval` + `fetch`) for real-time telemetry — 500 ms interval
+- Dark mode default with light mode toggle (Tailwind class-based)
 
 ## Development Setup
 
@@ -56,27 +57,30 @@ backend/
 ├── routers/
 │   ├── telemetry.py     # POST /telemetry/ingest, GET /telemetry/latest
 │   ├── sessions.py      # Session start/stop/list
-│   └── export.py        # CSV/JSON export per session
+│   ├── export.py        # CSV/JSON export per session
+│   └── control.py       # POST /control/command, GET /control/pending, POST /control/ack
 ├── models/
 │   ├── sensor.py        # Pydantic models for MPU6050 + BMP280 readings
-│   └── session.py       # Experiment session schema
+│   ├── session.py       # Experiment session schema
+│   └── control.py       # ControlCommand model (action, target_depth_m, speed_rpm)
 └── services/
     └── buoyancy.py      # Archimedes-based derived metrics (F_b, depth estimate)
 ```
 
 CORS must be configured in `main.py` to allow the Vite dev server (`localhost:5173`) to call the API.
 
-### Frontend — component breakdown (planned)
+### Frontend — component breakdown
 
 ```
 frontend/src/
-├── App.jsx              # Root, WebSocket connection setup
+├── App.jsx              # Root, polling setup, dark/mock mode state
 ├── components/
-│   ├── TelemetryChart.jsx   # Recharts time-series for pressure / accel / F_b
-│   ├── SessionControls.jsx  # Start/stop session, label input
-│   └── ExportButton.jsx     # Triggers CSV download
+│   ├── TelemetryChart.jsx    # Recharts time-series for F_b / depth / motor / accel-z
+│   ├── SessionControls.jsx   # Start/stop session, label input
+│   ├── ExportButton.jsx      # Triggers CSV download
+│   └── VehicleControls.jsx   # Surface / Dive / Hold-at-depth / Stop commands
 └── hooks/
-    └── useTelemetry.js      # WebSocket state management hook
+    └── useTelemetry.js       # HTTP polling hook + mock simulation mode
 ```
 
 ## Key Domain Concepts
@@ -85,14 +89,48 @@ frontend/src/
 - **Telemetry record**: timestamped snapshot from the ESP32 — pressure (Pa), temperature (°C), acceleration XYZ (m/s²), gyro XYZ (rad/s), motor position (steps).
 - **Buoyancy force**: derived in `services/buoyancy.py` from BMP280 pressure readings and a configured fluid density.
 - **Motor position**: expressed in stepper steps (2048 steps/rev with gearbox); maps to displaced volume for F_b calculation.
+- **Control command**: an action sent from the dashboard that the ESP32 will execute on its next poll cycle. Actions: `surface`, `dive`, `hold`, `stop`. The `hold` action requires a `target_depth_m` value.
+- **Command channel (pull model)**: The ESP32 polls `GET /control/pending` each time it ingests telemetry. FastAPI never pushes to the ESP32 directly — this avoids IP/NAT complexity and keeps the ESP32 as the initiator of all connections.
+- **Depth-hold strategy**: hysteresis. If `depth > target + threshold` → surface a bit; if `depth < target - threshold` → dive a bit; otherwise hold. Logic lives entirely in ESP32 firmware. Upgrading to a P-controller later only requires changing one firmware function — the API and dashboard are unaffected.
+- **UI language**: Mexican Spanish throughout all frontend components.
 
-## Planned API Surface
+## Motor Hardware Reference (28BYJ-48 + ULN2003)
+
+| Parameter | Value |
+|-----------|-------|
+| Steps/revolution | 2048 (half-step mode with gearbox) |
+| Max speed (no load) | ~15 RPM |
+| Phase GPIO pins | IN1=D13, IN2=D12, IN3=D14, IN4=D27 |
+| Phase init order | `Stepper(2048, IN1, IN3, IN2, IN4)` — order matters |
+| Supply voltage | 5V from VIN (not 3V3) |
+| Surface direction | Increase motor_steps (extend volume → more buoyancy) |
+| Dive direction | Decrease motor_steps (retract volume → less buoyancy) |
+
+## Control Command Model
+
+```python
+class ControlCommand(BaseModel):
+    action: Literal["surface", "dive", "hold", "stop"]
+    target_depth_m: float | None = None   # required when action == "hold"
+    speed_rpm: int = 10                   # motor speed, max 15 RPM
+```
+
+## API Surface
 
 ```
+# Telemetry
 GET  /telemetry/latest
 POST /telemetry/ingest
+
+# Sessions
 GET  /sessions
 POST /sessions/start
 POST /sessions/stop
 GET  /sessions/{id}/export
+
+# Vehicle control
+POST /control/command     → dashboard sends a command (dive / surface / hold / stop)
+GET  /control/pending     → ESP32 polls for the next command to execute
+POST /control/ack         → ESP32 confirms command was executed
+GET  /control/status      → dashboard polls for current command status
 ```

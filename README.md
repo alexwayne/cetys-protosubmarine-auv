@@ -67,7 +67,7 @@ characterize ascent/descent dynamics.
 | Frontend | React 18 + Vite |
 | Charts | Recharts |
 | Styling | Tailwind CSS |
-| Real-time data | WebSocket from ESP32 |
+| Real-time data | HTTP polling (500 ms, `fetch` + `setInterval`) |
 | Data storage | SQLite + CSV export |
 
 ---
@@ -75,18 +75,26 @@ characterize ascent/descent dynamics.
 ## Data Flow
 
 ```
-ESP32 (MPU6050 + BMP280 + stepper)
-    │  Wi-Fi (HTTP POST / WebSocket)
-    ▼
-FastAPI backend  ──→  SQLite (sessions)
-    │
-    │  REST API + WebSocket
-    ▼
-React frontend (Recharts dashboard)
-    │
-    ▼
-CSV / JSON export
+                        ┌─────────────────────────┐
+                        │   React Dashboard        │
+                        │  (Recharts + Tailwind)   │
+                        └────────┬────────┬────────┘
+               polls every 500ms │        │ POST /control/command
+                                 │        │
+                        ┌────────▼────────▼────────┐
+                        │     FastAPI backend       │
+                        │   SQLite (sessions)       │
+                        └────────┬────────┬────────┘
+          POST /telemetry/ingest │        │ GET /control/pending
+                                 │        │  (ESP32 polls each cycle)
+                        ┌────────▼────────▼────────┐
+                        │   ESP32 DevKit V1         │
+                        │  MPU6050 · BMP280         │
+                        │  28BYJ-48 stepper motor   │
+                        └──────────────────────────┘
 ```
+
+The command channel uses a **pull model**: the ESP32 initiates all connections, polling for pending commands each time it sends telemetry. FastAPI never needs to know the ESP32's IP address.
 
 ---
 
@@ -106,13 +114,14 @@ proto-auv/
 │       └── buoyancy.py      # Archimedes calculations, derived metrics
 ├── frontend/
 │   └── src/
-│       ├── App.jsx              # Root component, WebSocket setup
+│       ├── App.jsx              # Root component, dark/mock mode state
 │       ├── components/
-│       │   ├── TelemetryChart.jsx   # Recharts time-series plots
-│       │   ├── SessionControls.jsx  # Start/stop session, labeling
-│       │   └── ExportButton.jsx     # CSV / JSON download trigger
+│       │   ├── TelemetryChart.jsx    # Recharts time-series plots
+│       │   ├── SessionControls.jsx   # Start/stop session, labeling
+│       │   ├── ExportButton.jsx      # CSV / JSON download trigger
+│       │   └── VehicleControls.jsx   # Surface / Dive / Hold / Stop commands
 │       └── hooks/
-│           └── useTelemetry.js      # WebSocket state management
+│           └── useTelemetry.js       # HTTP polling hook + mock simulation mode
 ├── data/
 │   ├── sessions/            # Stored experiment runs
 │   └── sample/              # Sample datasets for development
@@ -127,16 +136,20 @@ proto-auv/
 
 ## Features
 
-- [ ] Real-time telemetry dashboard — live plots of pressure, acceleration
-  (Z-axis), estimated depth/altitude, and motor position
-- [ ] Experiment session management — start/stop recording, label runs,
-  annotate events (e.g., direction change, target depth reached)
-- [ ] Buoyancy force visualization — computed F_b over time based on
-  BMP280 pressure readings and known fluid density
+- [x] Real-time telemetry dashboard — live plots of buoyancy force (F_b),
+  estimated depth, motor position, and Z-axis acceleration
+- [x] Experiment session management — start/stop recording, label runs
+- [x] Data export — CSV export per session for external analysis
+  (MATLAB, Python, Excel)
+- [x] Mock / simulation mode — realistic dive simulation for development
+  and demos without the ESP32 connected
+- [x] Dark / light theme toggle
+- [ ] Vehicle control panel — Surface, Dive, Hold-at-depth, and Stop
+  commands sent to the ESP32 via the command channel
+- [ ] Depth-hold feedback — ESP32 uses BMP280 pressure readings to
+  maintain a target depth set from the dashboard
 - [ ] Vertical motion trajectory — depth vs. time plots for comparison
   against the dynamic model produced by other team members
-- [ ] Data export — CSV and JSON export per session for external analysis
-  (MATLAB, Python, Excel)
 - [ ] REST API — clean endpoints for integration with the ESP32 data
   stream and potential future hardware iterations
 
@@ -181,15 +194,33 @@ proto-auv/
 
 ---
 
-## API Endpoints (Planned)
+## API Endpoints
+
 ```
-GET  /telemetry/latest      → most recent sensor snapshot
-POST /telemetry/ingest      → receive data from ESP32
-GET  /sessions              → list all experiment sessions
-POST /sessions/start        → begin a new recorded session
-POST /sessions/stop         → end the current session
-GET  /sessions/{id}/export  → download session data as CSV
+# Telemetry
+GET  /telemetry/latest        → most recent sensor snapshot (polled by dashboard)
+POST /telemetry/ingest        → receive data from ESP32
+
+# Sessions
+GET  /sessions                → list all experiment sessions
+POST /sessions/start          → begin a new recorded session
+POST /sessions/stop           → end the current session
+GET  /sessions/{id}/export    → download session data as CSV
+
+# Vehicle control (command channel)
+POST /control/command         → dashboard sends a command: surface | dive | hold | stop
+GET  /control/pending         → ESP32 polls for the next command to execute
+POST /control/ack             → ESP32 confirms command execution
+GET  /control/status          → dashboard polls for current command status
 ```
+
+### Command model
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `action` | `"surface" \| "dive" \| "hold" \| "stop"` | Motion command |
+| `target_depth_m` | `float \| null` | Target depth in metres (required for `hold`) |
+| `speed_rpm` | `int` | Motor speed (default 10, max 15 RPM) |
 
 ---
 

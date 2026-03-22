@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.database import init_db
-from backend.routers import export, sessions, telemetry
+from backend.routers import control, export, sessions, telemetry
 
 
 @asynccontextmanager
@@ -31,6 +31,7 @@ app.add_middleware(
 app.include_router(telemetry.router, prefix="/telemetry", tags=["Telemetry"])
 app.include_router(sessions.router, prefix="/sessions", tags=["Sessions"])
 app.include_router(export.router, prefix="/sessions", tags=["Sessions"])
+app.include_router(control.router, prefix="/control", tags=["Control"])
 
 
 @app.get("/", tags=["Health"])
