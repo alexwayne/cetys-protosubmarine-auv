@@ -73,12 +73,13 @@ CORS must be configured in `main.py` to allow the Vite dev server (`localhost:51
 
 ```
 frontend/src/
-├── App.jsx              # Root, polling setup, dark/mock mode state
+├── App.jsx              # Root, polling setup, dark/mock mode state, layout
 ├── components/
 │   ├── TelemetryChart.jsx    # Recharts time-series for F_b / depth / motor / accel-z
 │   ├── SessionControls.jsx   # Start/stop session, label input
 │   ├── ExportButton.jsx      # Triggers CSV download
-│   └── VehicleControls.jsx   # Surface / Dive / Hold-at-depth / Stop commands
+│   ├── VehicleControls.jsx   # Surface / Dive / Hold-at-depth / Stop commands
+│   └── VehicleVisual.jsx     # Animated SVG of capsule position and hemisphere gap
 └── hooks/
     └── useTelemetry.js       # HTTP polling hook + mock simulation mode
 ```
@@ -93,6 +94,8 @@ frontend/src/
 - **Command channel (pull model)**: The ESP32 polls `GET /control/pending` each time it ingests telemetry. FastAPI never pushes to the ESP32 directly — this avoids IP/NAT complexity and keeps the ESP32 as the initiator of all connections.
 - **Depth-hold strategy**: hysteresis. If `depth > target + threshold` → surface a bit; if `depth < target - threshold` → dive a bit; otherwise hold. Logic lives entirely in ESP32 firmware. Upgrading to a P-controller later only requires changing one firmware function — the API and dashboard are unaffected.
 - **UI language**: Mexican Spanish throughout all frontend components.
+- **Capsule geometry**: spherical capsule (r = 55 mm, diameter 110 mm, PETG 3D-printed). Two hemispheres that separate by distance h (0–30 mm) driven by the stepper motor. More separation = more displaced volume = more buoyancy. `VehicleVisual.jsx` renders this with `MAX_MOTOR_STEPS` and `MAX_DEPTH_M` as calibration constants to update once measured.
+- **Dashboard layout**: two-column on large screens — left column (stat cards, vehicle controls, charts), right column (SVG vehicle visualization). Single column on mobile.
 
 ## Motor Hardware Reference (28BYJ-48 + ULN2003)
 

@@ -57,6 +57,11 @@ volume variation mechanism. The BMP280 tracks pressure changes during
 vertical motion; the MPU6050 captures acceleration along the Z-axis to
 characterize ascent/descent dynamics.
 
+The prototype capsule is a **spherical shell (r = 55 mm, ⌀ 110 mm)**
+fabricated in PETG by 3D printing, split into two hemispheres that
+separate by a controlled distance **h = 0–30 mm**. This separation
+directly increases the displaced volume and therefore F_b.
+
 ---
 
 ## Tech Stack
@@ -106,20 +111,23 @@ proto-auv/
 │   ├── routers/
 │   │   ├── telemetry.py     # Sensor data ingestion endpoints
 │   │   ├── sessions.py      # Experiment session management
-│   │   └── export.py        # CSV / JSON data export
+│   │   ├── export.py        # CSV / JSON data export
+│   │   └── control.py       # Vehicle command channel (send / pending / ack / status)
 │   ├── models/
 │   │   ├── sensor.py        # Pydantic models for sensor readings
-│   │   └── session.py       # Experiment session schema
+│   │   ├── session.py       # Experiment session schema
+│   │   └── control.py       # ControlCommand model
 │   └── services/
 │       └── buoyancy.py      # Archimedes calculations, derived metrics
 ├── frontend/
 │   └── src/
-│       ├── App.jsx              # Root component, dark/mock mode state
+│       ├── App.jsx              # Root component, dark/mock mode state, layout
 │       ├── components/
 │       │   ├── TelemetryChart.jsx    # Recharts time-series plots
 │       │   ├── SessionControls.jsx   # Start/stop session, labeling
 │       │   ├── ExportButton.jsx      # CSV / JSON download trigger
-│       │   └── VehicleControls.jsx   # Surface / Dive / Hold / Stop commands
+│       │   ├── VehicleControls.jsx   # Surface / Dive / Hold / Stop commands
+│       │   └── VehicleVisual.jsx     # Animated SVG capsule visualization
 │       └── hooks/
 │           └── useTelemetry.js       # HTTP polling hook + mock simulation mode
 ├── data/
@@ -144,10 +152,12 @@ proto-auv/
 - [x] Mock / simulation mode — realistic dive simulation for development
   and demos without the ESP32 connected
 - [x] Dark / light theme toggle
-- [ ] Vehicle control panel — Surface, Dive, Hold-at-depth, and Stop
-  commands sent to the ESP32 via the command channel
-- [ ] Depth-hold feedback — ESP32 uses BMP280 pressure readings to
-  maintain a target depth set from the dashboard
+- [x] Vehicle control panel — Surface, Dive, Hold-at-depth, and Stop
+  commands sent to the ESP32 via the command channel (pull model)
+- [x] Dynamic AUV visualization — animated SVG of the capsule moving
+  vertically in the tank, with hemisphere separation reflecting motor position
+- [ ] Depth-hold feedback (firmware) — ESP32 uses BMP280 pressure readings
+  and hysteresis to maintain a target depth set from the dashboard
 - [ ] Vertical motion trajectory — depth vs. time plots for comparison
   against the dynamic model produced by other team members
 - [ ] REST API — clean endpoints for integration with the ESP32 data
